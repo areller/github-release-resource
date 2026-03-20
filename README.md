@@ -1,6 +1,6 @@
 # GitHub Releases Resource
 
-Fetches and creates versioned GitHub resources.
+Fetches and creates versioned GitHub releases.
 
 <a href="https://ci.concourse-ci.org/teams/main/pipelines/resource/jobs/build?vars.type=%22github-release%22">
   <img src="https://ci.concourse-ci.org/api/v1/teams/main/pipelines/resource/jobs/build/badge?vars.type=%22github-release%22" alt="Build Status">
