@@ -46,7 +46,6 @@ func (g *GitHubClient) listReleasesV4() ([]*github.RepositoryRelease, error) {
 		}
 
 		for _, r := range listReleases.Repository.Releases.Edges {
-			r := r
 			publishedAt, _ := time.ParseInLocation(time.RFC3339, r.Node.PublishedAt.Time.Format(time.RFC3339), time.UTC)
 			createdAt, _ := time.ParseInLocation(time.RFC3339, r.Node.CreatedAt.Time.Format(time.RFC3339), time.UTC)
 			var releaseID int64

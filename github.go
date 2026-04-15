@@ -83,8 +83,8 @@ func NewGitHubClient(source Source) (*GitHubClient, error) {
 		}
 
 		var v4URL string
-		if strings.HasSuffix(source.GitHubAPIURL, "/v3/") {
-			v4URL = strings.TrimSuffix(source.GitHubAPIURL, "/v3/") + "/graphql"
+		if s, found := strings.CutSuffix(source.GitHubAPIURL, "/v3/"); found {
+			v4URL = s + "/graphql"
 		} else {
 			v4URL = source.GitHubAPIURL + "graphql"
 		}
