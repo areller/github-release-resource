@@ -35,9 +35,8 @@ type GitHub interface {
 }
 
 type GitHubClient struct {
-	client       *github.Client
-	clientV4     *githubv4.Client
-	isEnterprise bool
+	client   *github.Client
+	clientV4 *githubv4.Client
 
 	owner       string
 	repository  string
@@ -67,7 +66,6 @@ func NewGitHubClient(source Source) (*GitHubClient, error) {
 	client := github.NewClient(httpClient)
 
 	clientV4 := githubv4.NewClient(httpClient)
-	var isEnterprise bool
 
 	if source.GitHubAPIURL != "" {
 		var err error
@@ -91,12 +89,10 @@ func NewGitHubClient(source Source) (*GitHubClient, error) {
 			v4URL = source.GitHubAPIURL + "graphql"
 		}
 		clientV4 = githubv4.NewEnterpriseClient(v4URL, httpClient)
-		isEnterprise = true
 	}
 
 	if source.GitHubV4APIURL != "" {
 		clientV4 = githubv4.NewEnterpriseClient(source.GitHubV4APIURL, httpClient)
-		isEnterprise = true
 	}
 
 	if source.GitHubUploadsURL != "" {
@@ -113,20 +109,16 @@ func NewGitHubClient(source Source) (*GitHubClient, error) {
 	}
 
 	return &GitHubClient{
-		client:       client,
-		clientV4:     clientV4,
-		isEnterprise: isEnterprise,
-		owner:        owner,
-		repository:   source.Repository,
-		accessToken:  source.AccessToken,
+		client:      client,
+		clientV4:    clientV4,
+		owner:       owner,
+		repository:  source.Repository,
+		accessToken: source.AccessToken,
 	}, nil
 }
 
 func (g *GitHubClient) ListReleases() ([]*github.RepositoryRelease, error) {
 	if g.accessToken != "" {
-		if g.isEnterprise {
-			return g.listReleasesV4EnterPrice()
-		}
 		return g.listReleasesV4()
 	}
 	opt := &github.ListOptions{PerPage: 100}
