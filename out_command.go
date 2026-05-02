@@ -65,10 +65,11 @@ func (c *OutCommand) Run(sourceDir string, request OutRequest) (OutResponse, err
 	generateReleaseNotes := request.Params.GenerateReleaseNotes
 
 	release := &github.RepositoryRelease{
-		Name:                 github.String(name),
-		TagName:              github.String(tag),
-		Body:                 github.String(body),
-		Draft:                github.Bool(draft),
+		Name:    github.String(name),
+		TagName: github.String(tag),
+		Body:    github.String(body),
+		// Always create as draft first to support GitHub's immutable-releases workflow
+		Draft:                github.Bool(true),
 		Prerelease:           github.Bool(prerelease),
 		TargetCommitish:      github.String(targetCommitish),
 		GenerateReleaseNotes: github.Bool(generateReleaseNotes),
@@ -94,7 +95,6 @@ func (c *OutCommand) Run(sourceDir string, request OutRequest) (OutResponse, err
 		}
 
 		existingRelease.Name = github.String(name)
-		existingRelease.Draft = github.Bool(draft)
 		existingRelease.Prerelease = github.Bool(prerelease)
 
 		if targetCommitish != "" {
@@ -146,6 +146,13 @@ func (c *OutCommand) Run(sourceDir string, request OutRequest) (OutResponse, err
 				return OutResponse{}, err
 			}
 		}
+	}
+
+	release.Draft = github.Bool(draft)
+	fmt.Fprintf(c.writer, "finalizing release %s\n", name)
+	release, err = c.github.UpdateRelease(*release)
+	if err != nil {
+		return OutResponse{}, err
 	}
 
 	return OutResponse{
