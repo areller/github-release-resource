@@ -33,7 +33,7 @@ var _ = Describe("Out Command", func() {
 		var err error
 
 		githubClient = &fakes.FakeGitHub{}
-		command = resource.NewOutCommand(githubClient, io.Discard)
+		command = resource.NewOutCommand(githubClient, os.Stderr)
 
 		sourcesDir, err = os.MkdirTemp("", "github-release")
 		Ω(err).ShouldNot(HaveOccurred())
@@ -42,8 +42,9 @@ var _ = Describe("Out Command", func() {
 			createdRel := gh
 			createdRel.ID = github.Int64(112)
 			createdRel.HTMLURL = github.String("http://google.com")
-			createdRel.Name = github.String("release-name")
-			createdRel.Body = github.String("*markdown*")
+			createdRel.Name = gh.Name
+			createdRel.Body = gh.Body
+			createdRel.TagName = gh.TagName
 			return &createdRel, nil
 		}
 
@@ -142,7 +143,7 @@ var _ = Describe("Out Command", func() {
 				_, err := command.Run(sourcesDir, request)
 				Ω(err).ShouldNot(HaveOccurred())
 
-				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(1))
+				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(2))
 
 				updatedRelease := githubClient.UpdateReleaseArgsForCall(0)
 				Ω(*updatedRelease.Name).Should(Equal("v0.3.12"))
@@ -159,9 +160,9 @@ var _ = Describe("Out Command", func() {
 				_, err := command.Run(sourcesDir, request)
 				Ω(err).ShouldNot(HaveOccurred())
 
-				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(1))
+				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(2))
 
-				updatedRelease := githubClient.UpdateReleaseArgsForCall(0)
+				updatedRelease := githubClient.UpdateReleaseArgsForCall(1)
 				Ω(*updatedRelease.Name).Should(Equal("v0.3.12"))
 				Ω(*updatedRelease.Draft).Should(Equal(true))
 			})
@@ -176,7 +177,7 @@ var _ = Describe("Out Command", func() {
 				_, err := command.Run(sourcesDir, request)
 				Ω(err).ShouldNot(HaveOccurred())
 
-				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(1))
+				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(2))
 
 				updatedRelease := githubClient.UpdateReleaseArgsForCall(0)
 				Ω(*updatedRelease.Name).Should(Equal("v0.3.12"))
@@ -189,7 +190,7 @@ var _ = Describe("Out Command", func() {
 				_, err := command.Run(sourcesDir, request)
 				Ω(err).ShouldNot(HaveOccurred())
 
-				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(1))
+				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(2))
 
 				updatedRelease := githubClient.UpdateReleaseArgsForCall(0)
 				Ω(*updatedRelease.Name).Should(Equal("v0.3.12"))
@@ -209,7 +210,7 @@ var _ = Describe("Out Command", func() {
 				_, err := command.Run(sourcesDir, request)
 				Ω(err).ShouldNot(HaveOccurred())
 
-				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(1))
+				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(2))
 
 				updatedRelease := githubClient.UpdateReleaseArgsForCall(0)
 				Ω(*updatedRelease.Name).Should(Equal("v0.3.12"))
@@ -227,7 +228,7 @@ var _ = Describe("Out Command", func() {
 				_, err := command.Run(sourcesDir, request)
 				Ω(err).ShouldNot(HaveOccurred())
 
-				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(1))
+				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(2))
 
 				updatedRelease := githubClient.UpdateReleaseArgsForCall(0)
 				Ω(*updatedRelease.Name).Should(Equal("v0.3.12"))
@@ -323,8 +324,12 @@ var _ = Describe("Out Command", func() {
 			Ω(err).ShouldNot(HaveOccurred())
 
 			Ω(githubClient.CreateReleaseCallCount()).Should(Equal(1))
-			release := githubClient.CreateReleaseArgsForCall(0)
+			Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(1))
 
+			release := githubClient.CreateReleaseArgsForCall(0)
+			Ω(*release.Draft).Should(Equal(true))
+
+			release = githubClient.UpdateReleaseArgsForCall(0)
 			Ω(*release.Draft).Should(Equal(false))
 		})
 
@@ -332,6 +337,7 @@ var _ = Describe("Out Command", func() {
 			BeforeEach(func() {
 				bodyPath := filepath.Join(sourcesDir, "body")
 				file(bodyPath, "this is a great release")
+				request.Params.BodyPath = "body"
 				request.Source.Release = false
 				request.Source.PreRelease = true
 			})
@@ -341,11 +347,20 @@ var _ = Describe("Out Command", func() {
 				Ω(err).ShouldNot(HaveOccurred())
 
 				Ω(githubClient.CreateReleaseCallCount()).Should(Equal(1))
+				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(1))
 				release := githubClient.CreateReleaseArgsForCall(0)
 
 				Ω(*release.Name).Should(Equal("v0.3.12"))
 				Ω(*release.TagName).Should(Equal("0.3.12"))
-				Ω(*release.Body).Should(Equal(""))
+				Ω(*release.Body).Should(Equal("this is a great release"))
+				Ω(*release.Draft).Should(Equal(true))
+				Ω(*release.Prerelease).Should(Equal(true))
+
+				release = githubClient.UpdateReleaseArgsForCall(0)
+
+				Ω(*release.Name).Should(Equal("v0.3.12"))
+				Ω(*release.TagName).Should(Equal("0.3.12"))
+				Ω(*release.Body).Should(Equal("this is a great release"))
 				Ω(*release.Draft).Should(Equal(false))
 				Ω(*release.Prerelease).Should(Equal(true))
 			})
@@ -356,8 +371,8 @@ var _ = Describe("Out Command", func() {
 
 				Ω(outResponse.Metadata).Should(ConsistOf(
 					resource.MetadataPair{Name: "url", Value: "http://google.com"},
-					resource.MetadataPair{Name: "name", Value: "release-name", URL: "http://google.com"},
-					resource.MetadataPair{Name: "body", Value: "*markdown*", Markdown: true},
+					resource.MetadataPair{Name: "name", Value: "v0.3.12", URL: "http://google.com"},
+					resource.MetadataPair{Name: "body", Value: "this is a great release", Markdown: true},
 					resource.MetadataPair{Name: "tag", Value: "0.3.12"},
 					resource.MetadataPair{Name: "pre-release", Value: "true"},
 				))
@@ -368,6 +383,7 @@ var _ = Describe("Out Command", func() {
 			BeforeEach(func() {
 				bodyPath := filepath.Join(sourcesDir, "body")
 				file(bodyPath, "this is a great release")
+				request.Params.BodyPath = "body"
 				request.Source.Release = true
 				request.Source.PreRelease = true
 			})
@@ -377,11 +393,20 @@ var _ = Describe("Out Command", func() {
 				Ω(err).ShouldNot(HaveOccurred())
 
 				Ω(githubClient.CreateReleaseCallCount()).Should(Equal(1))
+				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(1))
 				release := githubClient.CreateReleaseArgsForCall(0)
 
 				Ω(*release.Name).Should(Equal("v0.3.12"))
 				Ω(*release.TagName).Should(Equal("0.3.12"))
-				Ω(*release.Body).Should(Equal(""))
+				Ω(*release.Body).Should(Equal("this is a great release"))
+				Ω(*release.Draft).Should(Equal(true))
+				Ω(*release.Prerelease).Should(Equal(false))
+
+				release = githubClient.UpdateReleaseArgsForCall(0)
+
+				Ω(*release.Name).Should(Equal("v0.3.12"))
+				Ω(*release.TagName).Should(Equal("0.3.12"))
+				Ω(*release.Body).Should(Equal("this is a great release"))
 				Ω(*release.Draft).Should(Equal(false))
 				Ω(*release.Prerelease).Should(Equal(false))
 			})
@@ -392,8 +417,8 @@ var _ = Describe("Out Command", func() {
 
 				Ω(outResponse.Metadata).Should(ConsistOf(
 					resource.MetadataPair{Name: "url", Value: "http://google.com"},
-					resource.MetadataPair{Name: "name", Value: "release-name", URL: "http://google.com"},
-					resource.MetadataPair{Name: "body", Value: "*markdown*", Markdown: true},
+					resource.MetadataPair{Name: "name", Value: "v0.3.12", URL: "http://google.com"},
+					resource.MetadataPair{Name: "body", Value: "this is a great release", Markdown: true},
 					resource.MetadataPair{Name: "tag", Value: "0.3.12"},
 				))
 			})
@@ -403,6 +428,7 @@ var _ = Describe("Out Command", func() {
 			BeforeEach(func() {
 				bodyPath := filepath.Join(sourcesDir, "body")
 				file(bodyPath, "this is a great release")
+				request.Params.BodyPath = "body"
 				request.Source.Drafts = true
 			})
 
@@ -411,11 +437,20 @@ var _ = Describe("Out Command", func() {
 				Ω(err).ShouldNot(HaveOccurred())
 
 				Ω(githubClient.CreateReleaseCallCount()).Should(Equal(1))
+				Ω(githubClient.UpdateReleaseCallCount()).Should(Equal(1))
 				release := githubClient.CreateReleaseArgsForCall(0)
 
 				Ω(*release.Name).Should(Equal("v0.3.12"))
 				Ω(*release.TagName).Should(Equal("0.3.12"))
-				Ω(*release.Body).Should(Equal(""))
+				Ω(*release.Body).Should(Equal("this is a great release"))
+				Ω(*release.Draft).Should(Equal(true))
+				Ω(*release.Prerelease).Should(Equal(false))
+
+				release = githubClient.UpdateReleaseArgsForCall(0)
+
+				Ω(*release.Name).Should(Equal("v0.3.12"))
+				Ω(*release.TagName).Should(Equal("0.3.12"))
+				Ω(*release.Body).Should(Equal("this is a great release"))
 				Ω(*release.Draft).Should(Equal(true))
 				Ω(*release.Prerelease).Should(Equal(false))
 			})
@@ -426,8 +461,8 @@ var _ = Describe("Out Command", func() {
 
 				Ω(outResponse.Metadata).Should(ConsistOf(
 					resource.MetadataPair{Name: "url", Value: "http://google.com"},
-					resource.MetadataPair{Name: "name", Value: "release-name", URL: "http://google.com"},
-					resource.MetadataPair{Name: "body", Value: "*markdown*", Markdown: true},
+					resource.MetadataPair{Name: "name", Value: "v0.3.12", URL: "http://google.com"},
+					resource.MetadataPair{Name: "body", Value: "this is a great release", Markdown: true},
 					resource.MetadataPair{Name: "tag", Value: "0.3.12"},
 					resource.MetadataPair{Name: "draft", Value: "true"},
 				))
@@ -477,7 +512,7 @@ var _ = Describe("Out Command", func() {
 
 				Ω(outResponse.Metadata).Should(ConsistOf(
 					resource.MetadataPair{Name: "url", Value: "http://google.com"},
-					resource.MetadataPair{Name: "name", Value: "release-name", URL: "http://google.com"},
+					resource.MetadataPair{Name: "name", Value: "v0.3.12", URL: "http://google.com"},
 					resource.MetadataPair{Name: "body", Value: "*markdown*", Markdown: true},
 					resource.MetadataPair{Name: "tag", Value: "0.3.12"},
 				))
