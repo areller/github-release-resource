@@ -1,8 +1,35 @@
 package resource
 
 import (
+	"encoding/json"
+	"fmt"
+	"strconv"
 	"time"
 )
+
+// FlexInt64 unmarshals from both JSON numbers and strings.
+// Concourse credential managers often interpolate all values as strings.
+type FlexInt64 int64
+
+func (f *FlexInt64) UnmarshalJSON(data []byte) error {
+	var n int64
+	if err := json.Unmarshal(data, &n); err == nil {
+		*f = FlexInt64(n)
+		return nil
+	}
+
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("app_id must be a number or numeric string, got: %s", string(data))
+	}
+
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return fmt.Errorf("app_id is not a valid integer: %q", s)
+	}
+	*f = FlexInt64(n)
+	return nil
+}
 
 type Source struct {
 	Owner      string `json:"owner"`
@@ -15,7 +42,7 @@ type Source struct {
 	GitHubV4APIURL   string `json:"github_v4_api_url"`
 	GitHubUploadsURL string `json:"github_uploads_url"`
 	AccessToken string `json:"access_token"`
-	AppID       int64  `json:"app_id"`
+	AppID       FlexInt64 `json:"app_id"`
 	PrivateKey  string `json:"private_key"`
 	Drafts           bool   `json:"drafts"`
 	PreRelease       bool   `json:"pre_release"`

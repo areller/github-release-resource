@@ -394,7 +394,7 @@ func appInstallationClient(ctx context.Context, baseTransport http.RoundTripper,
 	privateKey := []byte(source.PrivateKey)
 
 	// Create an app-level transport to discover the installation
-	appsTransport, err := ghinstallation.NewAppsTransport(baseTransport, source.AppID, privateKey)
+	appsTransport, err := ghinstallation.NewAppsTransport(baseTransport, int64(source.AppID), privateKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating GitHub App transport: %w", err)
 	}
@@ -428,7 +428,7 @@ func appInstallationClient(ctx context.Context, baseTransport http.RoundTripper,
 	}
 
 	// Create installation-level transport for authenticated API access
-	itr, err := ghinstallation.New(baseTransport, source.AppID, installation.GetID(), privateKey)
+	itr, err := ghinstallation.New(baseTransport, int64(source.AppID), installation.GetID(), privateKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating installation transport: %w", err)
 	}
