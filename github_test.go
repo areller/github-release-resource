@@ -1,6 +1,10 @@
 package resource_test
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -919,6 +923,140 @@ var _ = Describe("GitHub Client", func() {
 				body, err := io.ReadAll(readCloser)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(string(body)).To(Equal(redirectFileContents))
+			})
+		})
+	})
+
+	Describe("Auth validation", func() {
+		It("returns an error when both access_token and app credentials are set", func() {
+			_, err := NewGitHubClient(Source{
+				Owner:        "concourse",
+				Repository:   "concourse",
+				AccessToken:  "some-token",
+				AppID:        12345,
+				PrivateKey:   "some-key",
+				GitHubAPIURL: server.URL() + "/",
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cannot specify both access_token and app credentials"))
+		})
+
+		It("returns an error when app_id is set without private_key", func() {
+			_, err := NewGitHubClient(Source{
+				Owner:        "concourse",
+				Repository:   "concourse",
+				AppID:        12345,
+				GitHubAPIURL: server.URL() + "/",
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("both app_id and private_key must be specified"))
+		})
+
+		It("returns an error when private_key is set without app_id", func() {
+			_, err := NewGitHubClient(Source{
+				Owner:        "concourse",
+				Repository:   "concourse",
+				PrivateKey:   "some-key",
+				GitHubAPIURL: server.URL() + "/",
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("both app_id and private_key must be specified"))
+		})
+	})
+
+	Describe("GitHub App authentication", func() {
+		var testKeyPEM string
+
+		BeforeEach(func() {
+			key, err := rsa.GenerateKey(rand.Reader, 2048)
+			Expect(err).NotTo(HaveOccurred())
+
+			testKeyPEM = string(pem.EncodeToMemory(&pem.Block{
+				Type:  "RSA PRIVATE KEY",
+				Bytes: x509.MarshalPKCS1PrivateKey(key),
+			}))
+		})
+
+		Context("when the installation is found", func() {
+			It("creates a client that uses the installation token for GraphQL", func() {
+				// Mock: discover installation for repo
+				server.AppendHandlers(
+					ghttp.CombineHandlers(
+						ghttp.VerifyRequest("GET", "/repos/concourse/concourse/installation"),
+						ghttp.RespondWithJSONEncoded(200, map[string]any{
+							"id":     1234,
+							"app_id": 99,
+						}),
+					),
+				)
+
+				// Mock: create installation access token
+				server.AppendHandlers(
+					ghttp.CombineHandlers(
+						ghttp.VerifyRequest("POST", "/app/installations/1234/access_tokens"),
+						ghttp.RespondWithJSONEncoded(201, map[string]any{
+							"token":      "ghs_testinstalltoken",
+							"expires_at": time.Now().Add(1 * time.Hour).Format(time.RFC3339),
+						}),
+					),
+				)
+
+				// Mock: the actual GraphQL call
+				server.AppendHandlers(
+					ghttp.CombineHandlers(
+						ghttp.VerifyRequest("POST", "/graphql"),
+						ghttp.VerifyHeaderKV("Authorization", "token ghs_testinstalltoken"),
+						ghttp.RespondWith(200, singlePageRespEnterprise),
+					),
+				)
+
+				appClient, err := NewGitHubClient(Source{
+					Owner:        "concourse",
+					Repository:   "concourse",
+					AppID:        99,
+					PrivateKey:   testKeyPEM,
+					GitHubAPIURL: server.URL() + "/",
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				releases, err := appClient.ListReleases()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(releases).To(HaveLen(1))
+			})
+		})
+
+		Context("when the installation is not found", func() {
+			It("returns an error", func() {
+				server.AppendHandlers(
+					ghttp.CombineHandlers(
+						ghttp.VerifyRequest("GET", "/repos/concourse/concourse/installation"),
+						ghttp.RespondWith(404, `{"message": "Not Found"}`),
+					),
+				)
+
+				_, err := NewGitHubClient(Source{
+					Owner:        "concourse",
+					Repository:   "concourse",
+					AppID:        99,
+					PrivateKey:   testKeyPEM,
+					GitHubAPIURL: server.URL() + "/",
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("finding GitHub App installation for concourse/concourse"))
+			})
+		})
+
+		Context("when the private key is invalid", func() {
+			It("returns an error", func() {
+				_, err := NewGitHubClient(Source{
+					Owner:        "concourse",
+					Repository:   "concourse",
+					AppID:        99,
+					PrivateKey:   "not-a-valid-pem-key",
+					GitHubAPIURL: server.URL() + "/",
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("creating GitHub App transport"))
 			})
 		})
 	})
