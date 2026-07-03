@@ -36,6 +36,23 @@ Fetches and creates versioned GitHub releases.
         <a href="https://github.com/settings/personal-access-tokens">fine-grained access token</a> you create is only
         required to have the <code>content</code> permission. For classic access tokens, you need the
         <code>repo</code> or <code>public_repo</code> permission.
+        Mutually exclusive with <code>app_id</code>/<code>private_key</code>.
+      </td>
+    </tr>
+    <tr>
+      <td><code>app_id</code> (Optional)</td>
+      <td>
+        The ID of the GitHub App to authenticate as. Must be used together with
+        <code>private_key</code>. The resource will automatically discover the App
+        installation for the configured <code>owner</code>/<code>repository</code>.
+        Mutually exclusive with <code>access_token</code>.
+      </td>
+    </tr>
+    <tr>
+      <td><code>private_key</code> (Optional)</td>
+      <td>
+        The PEM-encoded private key of the GitHub App. Must be used together with
+        <code>app_id</code>. Mutually exclusive with <code>access_token</code>.
       </td>
     </tr>
     <tr>
@@ -146,6 +163,18 @@ Fetches and creates versioned GitHub releases.
     owner: concourse
     repository: concourse
     access_token: abcdef1234567890
+```
+
+Or using a GitHub App:
+
+``` yaml
+- name: gh-release
+  type: github-release
+  source:
+    owner: concourse
+    repository: concourse
+    app_id: ((github-app-id))
+    private_key: ((github-app-private-key))
 ```
 
 ``` yaml
