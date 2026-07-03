@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -924,6 +925,32 @@ var _ = Describe("GitHub Client", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(string(body)).To(Equal(redirectFileContents))
 			})
+		})
+	})
+
+	Describe("FlexInt64 unmarshaling", func() {
+		It("unmarshals app_id from a JSON number", func() {
+			input := `{"owner":"o","repository":"r","app_id":12345,"private_key":"k"}`
+			var s Source
+			err := json.Unmarshal([]byte(input), &s)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(int64(s.AppID)).To(Equal(int64(12345)))
+		})
+
+		It("unmarshals app_id from a JSON string", func() {
+			input := `{"owner":"o","repository":"r","app_id":"67890","private_key":"k"}`
+			var s Source
+			err := json.Unmarshal([]byte(input), &s)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(int64(s.AppID)).To(Equal(int64(67890)))
+		})
+
+		It("returns an error for a non-numeric string", func() {
+			input := `{"owner":"o","repository":"r","app_id":"not-a-number","private_key":"k"}`
+			var s Source
+			err := json.Unmarshal([]byte(input), &s)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not a valid integer"))
 		})
 	})
 

@@ -392,6 +392,7 @@ func validateAuth(source Source) error {
 
 func appInstallationClient(ctx context.Context, baseTransport http.RoundTripper, source Source) (*http.Client, func(context.Context) (string, error), error) {
 	privateKey := []byte(source.PrivateKey)
+	apiURL := normalizeURL(source.GitHubAPIURL)
 
 	// Create an app-level transport to discover the installation
 	appsTransport, err := ghinstallation.NewAppsTransport(baseTransport, int64(source.AppID), privateKey)
@@ -399,22 +400,17 @@ func appInstallationClient(ctx context.Context, baseTransport http.RoundTripper,
 		return nil, nil, fmt.Errorf("creating GitHub App transport: %w", err)
 	}
 
-	if source.GitHubAPIURL != "" {
-		apiURL := source.GitHubAPIURL
-		if !strings.HasSuffix(apiURL, "/") {
-			apiURL += "/"
-		}
+	if apiURL != "" {
 		appsTransport.BaseURL = apiURL
 	}
 
 	// Discover the installation ID for this repository
 	appClient := github.NewClient(&http.Client{Transport: appsTransport})
-	if source.GitHubAPIURL != "" {
-		apiURL := source.GitHubAPIURL
-		if !strings.HasSuffix(apiURL, "/") {
-			apiURL += "/"
+	if apiURL != "" {
+		appClient.BaseURL, err = url.Parse(apiURL)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parsing GitHub API URL: %w", err)
 		}
-		appClient.BaseURL, _ = url.Parse(apiURL)
 	}
 
 	owner := source.Owner
@@ -433,11 +429,7 @@ func appInstallationClient(ctx context.Context, baseTransport http.RoundTripper,
 		return nil, nil, fmt.Errorf("creating installation transport: %w", err)
 	}
 
-	if source.GitHubAPIURL != "" {
-		apiURL := source.GitHubAPIURL
-		if !strings.HasSuffix(apiURL, "/") {
-			apiURL += "/"
-		}
+	if apiURL != "" {
 		itr.BaseURL = apiURL
 	}
 
@@ -447,6 +439,16 @@ func appInstallationClient(ctx context.Context, baseTransport http.RoundTripper,
 	}
 
 	return httpClient, tokenFunc, nil
+}
+
+func normalizeURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	if !strings.HasSuffix(rawURL, "/") {
+		return rawURL + "/"
+	}
+	return rawURL
 }
 
 func oauthClient(ctx context.Context, source Source) (*http.Client, error) {
