@@ -14,7 +14,9 @@ type Source struct {
 	GitHubAPIURL     string `json:"github_api_url"`
 	GitHubV4APIURL   string `json:"github_v4_api_url"`
 	GitHubUploadsURL string `json:"github_uploads_url"`
-	AccessToken      string `json:"access_token"`
+	AccessToken string `json:"access_token"`
+	AppID       int64  `json:"app_id"`
+	PrivateKey  string `json:"private_key"`
 	Drafts           bool   `json:"drafts"`
 	PreRelease       bool   `json:"pre_release"`
 	Release          bool   `json:"release"`
