@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v88/github"
 
 	resource "github.com/concourse/github-release-resource"
 	"github.com/concourse/github-release-resource/fakes"

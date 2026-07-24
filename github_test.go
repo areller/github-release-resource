@@ -17,7 +17,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v88/github"
 	"github.com/onsi/gomega/ghttp"
 )
 
@@ -169,41 +169,31 @@ var _ = Describe("GitHub Client", func() {
 				Repository: "concourse",
 			}
 		})
-		Context("given only the v3 API endpoint", func() {
-			It("should replace v3 with graphql", func() {
-				server.AppendHandlers(
-					ghttp.CombineHandlers(
-						ghttp.VerifyRequest("POST", "/api/graphql"),
-						ghttp.RespondWith(200, singlePageRespEnterprise),
-					),
-				)
+		Context("deriving the GraphQL (v4) endpoint from the v3 API URL", func() {
+			DescribeTable("appends graphql, stripping any /v3 suffix first",
+				func(apiPath, expectedGraphQLPath string) {
+					server.AppendHandlers(
+						ghttp.CombineHandlers(
+							ghttp.VerifyRequest("POST", expectedGraphQLPath),
+							ghttp.RespondWith(200, singlePageRespEnterprise),
+						),
+					)
 
-				source.GitHubAPIURL = server.URL() + "/api/v3"
-				//setting the access token is how we ensure the v4 client is used
-				source.AccessToken = "abc123"
-				client, err = NewGitHubClient(source)
-				Ω(err).ShouldNot(HaveOccurred())
+					source.GitHubAPIURL = server.URL() + apiPath
+					//setting the access token is how we ensure the v4 client is used
+					source.AccessToken = "abc123"
+					client, err = NewGitHubClient(source)
+					Expect(err).ShouldNot(HaveOccurred())
 
-				_, err := client.ListReleases()
-				Ω(err).ShouldNot(HaveOccurred())
-			})
-			It("should always append graphql", func() {
-				server.AppendHandlers(
-					ghttp.CombineHandlers(
-						ghttp.VerifyRequest("POST", "/api/graphql"),
-						ghttp.RespondWith(200, singlePageRespEnterprise),
-					),
-				)
-
-				source.GitHubAPIURL = server.URL() + "/api/"
-				//setting the access token is how we ensure the v4 client is used
-				source.AccessToken = "abc123"
-				client, err = NewGitHubClient(source)
-				Ω(err).ShouldNot(HaveOccurred())
-
-				_, err := client.ListReleases()
-				Ω(err).ShouldNot(HaveOccurred())
-			})
+					_, err := client.ListReleases()
+					Expect(err).ShouldNot(HaveOccurred())
+				},
+				Entry("strips a /v3/ suffix", "/api/v3/", "/api/graphql"),
+				Entry("strips a /v3 suffix without a trailing slash", "/api/v3", "/api/graphql"),
+				Entry("appends graphql when the path already ends in a slash", "/api/", "/api/graphql"),
+				Entry("appends graphql when the path has no trailing slash", "/api", "/api/graphql"),
+				Entry("handles a bare host with a trailing slash", "/", "/graphql"),
+			)
 		})
 	})
 
@@ -772,7 +762,7 @@ var _ = Describe("GitHub Client", func() {
 			const redirectPath = "/the/redirect/path"
 
 			BeforeEach(func() {
-				appendGetHandler(server, assetPath, 307, "", true, locationHeader(redirectPath))
+				appendGetHandler(server, assetPath, http.StatusFound, "", true, locationHeader(redirectPath))
 			})
 
 			Context("when the redirect succeeds", func() {
@@ -802,7 +792,7 @@ var _ = Describe("GitHub Client", func() {
 				)
 
 				BeforeEach(func() {
-					appendGetHandler(server, redirectPath, 307, "", true, locationHeader("/somewhere-else"))
+					appendGetHandler(server, redirectPath, http.StatusFound, "", true, locationHeader("/somewhere-else"))
 					appendGetHandler(server, "/somewhere-else", 200, redirectFileContents, true)
 				})
 
@@ -830,7 +820,7 @@ var _ = Describe("GitHub Client", func() {
 					Expect(err).NotTo(HaveOccurred())
 					externalUrl := fmt.Sprintf("http://localhost:%s", u.Port())
 
-					appendGetHandler(server, redirectPath, 307, "", true, locationHeader(externalUrl+"/somewhere-else"))
+					appendGetHandler(server, redirectPath, http.StatusFound, "", true, locationHeader(externalUrl+"/somewhere-else"))
 					appendGetHandler(externalServer, "/somewhere-else", 200, redirectFileContents, false)
 				})
 
@@ -912,7 +902,7 @@ var _ = Describe("GitHub Client", func() {
 			BeforeEach(func() {
 				externalServer = ghttp.NewServer()
 
-				appendGetHandler(server, assetPath, 307, "", true, locationHeader(externalServer.URL()+"/somewhere-else"))
+				appendGetHandler(server, assetPath, http.StatusFound, "", true, locationHeader(externalServer.URL()+"/somewhere-else"))
 				appendGetHandler(externalServer, "/somewhere-else", 200, redirectFileContents, false)
 			})
 
