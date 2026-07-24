@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/semver v1.5.0
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
 	github.com/cppforlife/go-semi-semantic v0.0.0-20160921010311-576b6af77ae4
-	github.com/google/go-github/v66 v66.0.0
+	github.com/google/go-github/v88 v88.0.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.12.2
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/onsi/ginkgo/v2 v2.28.3
@@ -21,7 +21,6 @@ require (
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/go-github/v88 v88.0.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/nxadm/tail v1.4.5 // indirect

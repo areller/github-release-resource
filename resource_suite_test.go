@@ -6,7 +6,7 @@ import (
 	"time"
 
 	resource "github.com/concourse/github-release-resource"
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v88/github"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

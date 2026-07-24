@@ -31,6 +31,10 @@ func (f *FlexInt64) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (f FlexInt64) Int64() int64 {
+	return int64(f)
+}
+
 type Source struct {
 	Owner      string `json:"owner"`
 	Repository string `json:"repository"`
@@ -38,17 +42,17 @@ type Source struct {
 	// Deprecated; use Owner instead
 	User string `json:"user"`
 
-	GitHubAPIURL     string `json:"github_api_url"`
-	GitHubV4APIURL   string `json:"github_v4_api_url"`
-	GitHubUploadsURL string `json:"github_uploads_url"`
-	AccessToken string `json:"access_token"`
-	AppID       FlexInt64 `json:"app_id"`
-	PrivateKey  string `json:"private_key"`
-	Drafts           bool   `json:"drafts"`
-	PreRelease       bool   `json:"pre_release"`
-	Release          bool   `json:"release"`
-	Insecure         bool   `json:"insecure"`
-	AssetDir         bool   `json:"asset_dir"`
+	GitHubAPIURL     string    `json:"github_api_url"`
+	GitHubV4APIURL   string    `json:"github_v4_api_url"`
+	GitHubUploadsURL string    `json:"github_uploads_url"`
+	AccessToken      string    `json:"access_token"`
+	AppID            FlexInt64 `json:"app_id"`
+	PrivateKey       string    `json:"private_key"`
+	Drafts           bool      `json:"drafts"`
+	PreRelease       bool      `json:"pre_release"`
+	Release          bool      `json:"release"`
+	Insecure         bool      `json:"insecure"`
+	AssetDir         bool      `json:"asset_dir"`
 
 	TagFilter        string `json:"tag_filter"`
 	OrderBy          string `json:"order_by"`

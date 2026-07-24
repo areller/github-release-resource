@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v88/github"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 )
@@ -65,6 +65,7 @@ func NewGitHubClient(source Source) (*GitHubClient, error) {
 	var hasAuth bool
 	var tokenFunc func(ctx context.Context) (string, error)
 
+	var opts []github.ClientOptionsFunc
 	switch {
 	case source.AccessToken != "":
 		var err error
@@ -89,44 +90,38 @@ func NewGitHubClient(source Source) (*GitHubClient, error) {
 		httpClient = &http.Client{Transport: baseTransport}
 	}
 
-	client := github.NewClient(httpClient)
+	opts = append(opts, github.WithHTTPClient(httpClient))
 
 	clientV4 := githubv4.NewClient(httpClient)
 
+	var baseURL, uploadURL *string
 	if source.GitHubAPIURL != "" {
-		var err error
-		if !strings.HasSuffix(source.GitHubAPIURL, "/") {
-			source.GitHubAPIURL += "/"
-		}
-		client.BaseURL, err = url.Parse(source.GitHubAPIURL)
-		if err != nil {
-			return nil, err
-		}
-
-		client.UploadURL, err = url.Parse(source.GitHubAPIURL)
-		if err != nil {
-			return nil, err
-		}
+		b := normalizeURL(source.GitHubAPIURL)
+		baseURL = &b
+		uploadURL = &b
 
 		var v4URL string
-		if s, found := strings.CutSuffix(source.GitHubAPIURL, "/v3/"); found {
-			v4URL = s + "/graphql"
-		} else {
-			v4URL = source.GitHubAPIURL + "graphql"
-		}
+		v4URL, _ = strings.CutSuffix(source.GitHubAPIURL, "/v3/")
+		v4URL, _ = strings.CutSuffix(v4URL, "/v3")
+
+		v4URL = normalizeURL(v4URL) + "graphql"
 		clientV4 = githubv4.NewEnterpriseClient(v4URL, httpClient)
 	}
+
+	if source.GitHubUploadsURL != "" {
+		u := normalizeURL(source.GitHubUploadsURL)
+		uploadURL = &u
+	}
+
+	opts = append(opts, github.WithURLs(baseURL, uploadURL))
 
 	if source.GitHubV4APIURL != "" {
 		clientV4 = githubv4.NewEnterpriseClient(source.GitHubV4APIURL, httpClient)
 	}
 
-	if source.GitHubUploadsURL != "" {
-		var err error
-		client.UploadURL, err = url.Parse(source.GitHubUploadsURL)
-		if err != nil {
-			return nil, err
-		}
+	client, err := github.NewClient(opts...)
+	if err != nil {
+		return nil, err
 	}
 
 	owner := source.Owner
@@ -288,12 +283,17 @@ func (g *GitHubClient) DownloadReleaseAsset(asset github.ReleaseAsset) (io.ReadC
 		return bodyReader, err
 	}
 
-	req, err := g.client.NewRequest("GET", redirectURL, nil)
+	req, err := g.client.NewRequest(context.TODO(), "GET", redirectURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/octet-stream")
-	if g.hasAuth && req.URL.Host == g.client.BaseURL.Host {
+	baseURL, err := url.Parse(g.client.BaseURL())
+	if err != nil {
+		return nil, err
+	}
+
+	if g.hasAuth && req.URL.Host == baseURL.Host {
 		token, err := g.tokenFunc(context.TODO())
 		if err != nil {
 			return nil, fmt.Errorf("obtaining auth token for asset download: %w", err)
@@ -393,24 +393,24 @@ func validateAuth(source Source) error {
 func appInstallationClient(ctx context.Context, baseTransport http.RoundTripper, source Source) (*http.Client, func(context.Context) (string, error), error) {
 	privateKey := []byte(source.PrivateKey)
 	apiURL := normalizeURL(source.GitHubAPIURL)
+	var opts []github.ClientOptionsFunc
 
 	// Create an app-level transport to discover the installation
-	appsTransport, err := ghinstallation.NewAppsTransport(baseTransport, int64(source.AppID), privateKey)
+	appsTransport, err := ghinstallation.NewAppsTransport(baseTransport, source.AppID.Int64(), privateKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating GitHub App transport: %w", err)
 	}
+	opts = append(opts, github.WithHTTPClient(&http.Client{Transport: appsTransport}))
 
 	if apiURL != "" {
 		appsTransport.BaseURL = apiURL
+		opts = append(opts, github.WithURLs(&apiURL, nil))
 	}
 
 	// Discover the installation ID for this repository
-	appClient := github.NewClient(&http.Client{Transport: appsTransport})
-	if apiURL != "" {
-		appClient.BaseURL, err = url.Parse(apiURL)
-		if err != nil {
-			return nil, nil, fmt.Errorf("parsing GitHub API URL: %w", err)
-		}
+	appClient, err := github.NewClient(opts...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating client for app installation ID discovery: %w", err)
 	}
 
 	owner := source.Owner
@@ -418,13 +418,13 @@ func appInstallationClient(ctx context.Context, baseTransport http.RoundTripper,
 		owner = source.User
 	}
 
-	installation, _, err := appClient.Apps.FindRepositoryInstallation(ctx, owner, source.Repository)
+	installation, _, err := appClient.Apps.GetRepositoryInstallation(ctx, owner, source.Repository)
 	if err != nil {
 		return nil, nil, fmt.Errorf("finding GitHub App installation for %s/%s: %w", owner, source.Repository, err)
 	}
 
 	// Create installation-level transport for authenticated API access
-	itr, err := ghinstallation.New(baseTransport, int64(source.AppID), installation.GetID(), privateKey)
+	itr, err := ghinstallation.New(baseTransport, source.AppID.Int64(), installation.GetID(), privateKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating installation transport: %w", err)
 	}
@@ -433,12 +433,7 @@ func appInstallationClient(ctx context.Context, baseTransport http.RoundTripper,
 		itr.BaseURL = apiURL
 	}
 
-	httpClient := &http.Client{Transport: itr}
-	tokenFunc := func(ctx context.Context) (string, error) {
-		return itr.Token(ctx)
-	}
-
-	return httpClient, tokenFunc, nil
+	return &http.Client{Transport: itr}, itr.Token, nil
 }
 
 func normalizeURL(rawURL string) string {
