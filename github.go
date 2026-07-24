@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v66/github"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
@@ -38,29 +39,54 @@ type GitHubClient struct {
 	client   *github.Client
 	clientV4 *githubv4.Client
 
-	owner       string
-	repository  string
-	accessToken string
+	owner      string
+	repository string
+	hasAuth    bool
+	tokenFunc  func(ctx context.Context) (string, error)
 }
 
 func NewGitHubClient(source Source) (*GitHubClient, error) {
-	httpClient := &http.Client{}
+	if err := validateAuth(source); err != nil {
+		return nil, err
+	}
+
+	var baseTransport http.RoundTripper = http.DefaultTransport
 	ctx := context.TODO()
 
 	if source.Insecure {
-		httpClient.Transport = &http.Transport{
+		baseTransport = &http.Transport{
 			Proxy:           http.ProxyFromEnvironment,
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, &http.Client{Transport: baseTransport})
 	}
 
-	if source.AccessToken != "" {
+	var httpClient *http.Client
+	var hasAuth bool
+	var tokenFunc func(ctx context.Context) (string, error)
+
+	switch {
+	case source.AccessToken != "":
 		var err error
 		httpClient, err = oauthClient(ctx, source)
 		if err != nil {
 			return nil, err
 		}
+		hasAuth = true
+		tokenFunc = func(_ context.Context) (string, error) {
+			return source.AccessToken, nil
+		}
+
+	case source.AppID != 0:
+		var err error
+		httpClient, tokenFunc, err = appInstallationClient(ctx, baseTransport, source)
+		if err != nil {
+			return nil, err
+		}
+		hasAuth = true
+
+	default:
+		httpClient = &http.Client{Transport: baseTransport}
 	}
 
 	client := github.NewClient(httpClient)
@@ -109,16 +135,17 @@ func NewGitHubClient(source Source) (*GitHubClient, error) {
 	}
 
 	return &GitHubClient{
-		client:      client,
-		clientV4:    clientV4,
-		owner:       owner,
-		repository:  source.Repository,
-		accessToken: source.AccessToken,
+		client:     client,
+		clientV4:   clientV4,
+		owner:      owner,
+		repository: source.Repository,
+		hasAuth:    hasAuth,
+		tokenFunc:  tokenFunc,
 	}, nil
 }
 
 func (g *GitHubClient) ListReleases() ([]*github.RepositoryRelease, error) {
-	if g.accessToken != "" {
+	if g.hasAuth {
 		return g.listReleasesV4()
 	}
 	opt := &github.ListOptions{PerPage: 100}
@@ -266,8 +293,12 @@ func (g *GitHubClient) DownloadReleaseAsset(asset github.ReleaseAsset) (io.ReadC
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/octet-stream")
-	if g.accessToken != "" && req.URL.Host == g.client.BaseURL.Host {
-		req.Header.Set("Authorization", "Bearer "+g.accessToken)
+	if g.hasAuth && req.URL.Host == g.client.BaseURL.Host {
+		token, err := g.tokenFunc(context.TODO())
+		if err != nil {
+			return nil, fmt.Errorf("obtaining auth token for asset download: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	httpClient := &http.Client{}
@@ -343,6 +374,81 @@ func (g *GitHubClient) ResolveTagToCommitSHA(tagName string) (string, error) {
 	}
 
 	return "", fmt.Errorf("could not resolve tag %q to commit: exceeded maximum tag chain depth of %d", tagName, maxDepth)
+}
+
+func validateAuth(source Source) error {
+	hasToken := source.AccessToken != ""
+	hasAppID := source.AppID != 0
+	hasKey := source.PrivateKey != ""
+
+	if hasToken && (hasAppID || hasKey) {
+		return errors.New("cannot specify both access_token and app credentials (app_id/private_key)")
+	}
+	if hasAppID != hasKey {
+		return errors.New("both app_id and private_key must be specified for GitHub App auth")
+	}
+	return nil
+}
+
+func appInstallationClient(ctx context.Context, baseTransport http.RoundTripper, source Source) (*http.Client, func(context.Context) (string, error), error) {
+	privateKey := []byte(source.PrivateKey)
+	apiURL := normalizeURL(source.GitHubAPIURL)
+
+	// Create an app-level transport to discover the installation
+	appsTransport, err := ghinstallation.NewAppsTransport(baseTransport, int64(source.AppID), privateKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating GitHub App transport: %w", err)
+	}
+
+	if apiURL != "" {
+		appsTransport.BaseURL = apiURL
+	}
+
+	// Discover the installation ID for this repository
+	appClient := github.NewClient(&http.Client{Transport: appsTransport})
+	if apiURL != "" {
+		appClient.BaseURL, err = url.Parse(apiURL)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parsing GitHub API URL: %w", err)
+		}
+	}
+
+	owner := source.Owner
+	if source.User != "" {
+		owner = source.User
+	}
+
+	installation, _, err := appClient.Apps.FindRepositoryInstallation(ctx, owner, source.Repository)
+	if err != nil {
+		return nil, nil, fmt.Errorf("finding GitHub App installation for %s/%s: %w", owner, source.Repository, err)
+	}
+
+	// Create installation-level transport for authenticated API access
+	itr, err := ghinstallation.New(baseTransport, int64(source.AppID), installation.GetID(), privateKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating installation transport: %w", err)
+	}
+
+	if apiURL != "" {
+		itr.BaseURL = apiURL
+	}
+
+	httpClient := &http.Client{Transport: itr}
+	tokenFunc := func(ctx context.Context) (string, error) {
+		return itr.Token(ctx)
+	}
+
+	return httpClient, tokenFunc, nil
+}
+
+func normalizeURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	if !strings.HasSuffix(rawURL, "/") {
+		return rawURL + "/"
+	}
+	return rawURL
 }
 
 func oauthClient(ctx context.Context, source Source) (*http.Client, error) {
